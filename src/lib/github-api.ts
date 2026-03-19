@@ -11,6 +11,9 @@ const callGitHub = async (token: string, body: Record<string, unknown>) => {
   return data;
 };
 
+export const checkScopes = (token: string) =>
+  callGitHub(token, { action: "check-scopes" });
+
 export const getUser = (token: string) =>
   callGitHub(token, { action: "get-user" });
 
@@ -36,3 +39,31 @@ export const uploadFile = (
     content: btoa(unescape(encodeURIComponent(content))),
     message,
   });
+
+export const listFiles = (token: string, owner: string, repo: string, path?: string) =>
+  callGitHub(token, { action: "list-files", owner, repo, path });
+
+export const getFile = (token: string, owner: string, repo: string, path: string) =>
+  callGitHub(token, { action: "get-file", owner, repo, path });
+
+export const deleteFile = (
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  sha: string,
+  message?: string
+) =>
+  callGitHub(token, { action: "delete-file", owner, repo, path, sha, message });
+
+export const listCommits = (token: string, owner: string, repo: string, path?: string) =>
+  callGitHub(token, { action: "list-commits", owner, repo, path });
+
+export const getCommitFile = (
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  ref: string
+) =>
+  callGitHub(token, { action: "get-commit-file", owner, repo, path, ref });
