@@ -1,12 +1,14 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Upload, Loader2, FileCode2, Link, Copy, Check } from "lucide-react";
+import { Upload, Loader2, FileCode2, Link, Copy, Check, Save } from "lucide-react";
 import Editor from "@monaco-editor/react";
 
 interface CodeEditorProps {
   onUpload: (fileName: string, content: string) => Promise<string>;
   disabled: boolean;
+  initialCode?: string;
+  initialFileName?: string;
 }
 
 const DEFAULT_LUA = `-- Lua Script
@@ -19,12 +21,56 @@ end
 hello("World")
 `;
 
-const CodeEditor = ({ onUpload, disabled }: CodeEditorProps) => {
-  const [code, setCode] = useState(DEFAULT_LUA);
-  const [fileName, setFileName] = useState("script.lua");
+const AUTOSAVE_KEY = "lua_autosave";
+const AUTOSAVE_INTERVAL = 5000;
+
+const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEditorProps) => {
+  const [code, setCode] = useState(() => {
+    const saved = localStorage.getItem(AUTOSAVE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved).code || DEFAULT_LUA;
+      } catch { return DEFAULT_LUA; }
+    }
+    return DEFAULT_LUA;
+  });
+  const [fileName, setFileName] = useState(() => {
+    const saved = localStorage.getItem(AUTOSAVE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved).fileName || "script.lua";
+      } catch { return "script.lua"; }
+    }
+    return "script.lua";
+  });
   const [uploading, setUploading] = useState(false);
   const [rawUrl, setRawUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [autoSaved, setAutoSaved] = useState(false);
+  const lastSaveRef = useRef<string>("");
+
+  // Load initial code when editing from file browser
+  useEffect(() => {
+    if (initialCode !== undefined) setCode(initialCode);
+  }, [initialCode]);
+
+  useEffect(() => {
+    if (initialFileName !== undefined) setFileName(initialFileName);
+  }, [initialFileName]);
+
+  // Auto-save to localStorage
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const data = JSON.stringify({ code, fileName });
+      if (data !== lastSaveRef.current) {
+        localStorage.setItem(AUTOSAVE_KEY, data);
+        lastSaveRef.current = data;
+        setAutoSaved(true);
+        setTimeout(() => setAutoSaved(false), 1500);
+      }
+    }, AUTOSAVE_INTERVAL);
+    return () => clearInterval(timer);
+  }, [code, fileName]);
 
   const handleUpload = async () => {
     if (!code.trim() || !fileName.trim()) return;
@@ -38,15 +84,8 @@ const CodeEditor = ({ onUpload, disabled }: CodeEditorProps) => {
     }
   };
 
-  const copyUrl = () => {
-    navigator.clipboard.writeText(rawUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const copyLoadstring = () => {
-    const cmd = `loadstring(game:HttpGet("${rawUrl}"))()`;
-    navigator.clipboard.writeText(cmd);
+  const copyText = (text: string) => {
+    navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -60,6 +99,11 @@ const CodeEditor = ({ onUpload, disabled }: CodeEditorProps) => {
       <label className="text-sm font-mono text-muted-foreground flex items-center gap-2">
         <FileCode2 className="w-4 h-4 text-primary" />
         محرر الكود (Lua Editor)
+        {autoSaved && (
+          <span className="text-[10px] text-primary/60 flex items-center gap-1 animate-pulse">
+            <Save className="w-2.5 h-2.5" /> حفظ تلقائي
+          </span>
+        )}
       </label>
       <div className="flex gap-2">
         <Input
@@ -115,7 +159,7 @@ const CodeEditor = ({ onUpload, disabled }: CodeEditorProps) => {
             <code className="text-xs font-mono text-accent bg-muted px-2 py-1 rounded flex-1 overflow-x-auto">
               {rawUrl}
             </code>
-            <Button variant="outline" size="sm" onClick={copyUrl}>
+            <Button variant="outline" size="sm" onClick={() => copyText(rawUrl)}>
               {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
             </Button>
           </div>
@@ -125,7 +169,11 @@ const CodeEditor = ({ onUpload, disabled }: CodeEditorProps) => {
               <code className="text-xs font-mono text-warning bg-muted px-2 py-1 rounded flex-1 overflow-x-auto">
                 {`loadstring(game:HttpGet("${rawUrl}"))()`}
               </code>
-              <Button variant="outline" size="sm" onClick={copyLoadstring}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => copyText(`loadstring(game:HttpGet("${rawUrl}"))()`)}
+              >
                 <Copy className="w-3 h-3" />
               </Button>
             </div>

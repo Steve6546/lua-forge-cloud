@@ -4,6 +4,9 @@ import { Terminal } from "lucide-react";
 import TokenInput from "@/components/TokenInput";
 import RepoManager from "@/components/RepoManager";
 import CodeEditor from "@/components/CodeEditor";
+import FileBrowser from "@/components/FileBrowser";
+import VersionHistory from "@/components/VersionHistory";
+import ScopeChecker from "@/components/ScopeChecker";
 import * as github from "@/lib/github-api";
 
 interface Repo {
@@ -16,16 +19,22 @@ interface Repo {
 const Index = () => {
   const [token, setToken] = useState("");
   const [username, setUsername] = useState("");
+  const [scopes, setScopes] = useState("");
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState("");
   const [loadingRepos, setLoadingRepos] = useState(false);
+  const [editingFile, setEditingFile] = useState<{ path: string; content: string } | null>(null);
+
+  const selectedRepoObj = repos.find((r) => r.full_name === selectedRepo);
 
   const handleConnect = useCallback(async (t: string) => {
     try {
-      const user = await github.getUser(t);
-      setUsername(user.login);
+      // Check scopes first
+      const scopeData = await github.checkScopes(t);
+      setScopes(scopeData.scopes || "");
+      setUsername(scopeData.user.login);
       setToken(t);
-      toast.success(`مرحباً ${user.login}!`);
+      toast.success(`مرحباً ${scopeData.user.login}!`);
       setLoadingRepos(true);
       const repoList = await github.fetchRepos(t);
       setRepos(repoList);
@@ -41,8 +50,10 @@ const Index = () => {
   const handleDisconnect = useCallback(() => {
     setToken("");
     setUsername("");
+    setScopes("");
     setRepos([]);
     setSelectedRepo("");
+    setEditingFile(null);
     toast.info("تم قطع الاتصال");
   }, []);
 
@@ -70,11 +81,7 @@ const Index = () => {
         setSelectedRepo(repo.full_name);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "خطأ في الإنشاء";
-        if (msg.includes("Resource not accessible")) {
-          toast.error("المفتاح لا يملك صلاحية إنشاء مستودعات. تأكد من تفعيل صلاحية repo");
-        } else {
-          toast.error(msg);
-        }
+        toast.error(msg);
       }
     },
     [token]
@@ -88,13 +95,7 @@ const Index = () => {
         return "";
       }
       try {
-        await github.uploadFile(
-          token,
-          repo.owner.login,
-          repo.name,
-          fileName,
-          content
-        );
+        await github.uploadFile(token, repo.owner.login, repo.name, fileName, content);
         const rawUrl = `https://raw.githubusercontent.com/${repo.full_name}/main/${fileName}`;
         toast.success("تم رفع الملف بنجاح!");
         return rawUrl;
@@ -107,12 +108,21 @@ const Index = () => {
     [token, selectedRepo, repos]
   );
 
+  const handleEditFile = useCallback((path: string, content: string) => {
+    setEditingFile({ path, content });
+    toast.info(`تم تحميل ${path} في المحرر`);
+  }, []);
+
+  const handleRestoreVersion = useCallback((content: string) => {
+    setEditingFile((prev) => prev ? { ...prev, content } : null);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3 pb-4 border-b border-border">
-          <div className="p-2 rounded-md bg-primary/10">
+          <div className="p-2 rounded-md bg-primary/10 animate-pulse-glow">
             <Terminal className="w-6 h-6 text-primary" />
           </div>
           <div>
@@ -126,13 +136,14 @@ const Index = () => {
         </div>
 
         {/* Token */}
-        <div className="p-4 rounded-lg bg-card border border-border">
+        <div className="p-4 rounded-lg bg-card border border-border space-y-3">
           <TokenInput
             onConnect={handleConnect}
             onDisconnect={handleDisconnect}
             isConnected={!!token}
             username={username}
           />
+          {token && scopes !== undefined && <ScopeChecker scopes={scopes} />}
         </div>
 
         {/* Repos */}
@@ -149,10 +160,40 @@ const Index = () => {
           </div>
         )}
 
+        {/* File Browser */}
+        {token && selectedRepoObj && (
+          <div className="p-4 rounded-lg bg-card border border-border">
+            <FileBrowser
+              token={token}
+              owner={selectedRepoObj.owner.login}
+              repo={selectedRepoObj.name}
+              onEditFile={handleEditFile}
+            />
+          </div>
+        )}
+
         {/* Editor */}
         {token && (
           <div className="p-4 rounded-lg bg-card border border-border">
-            <CodeEditor onUpload={handleUpload} disabled={!selectedRepo} />
+            <CodeEditor
+              onUpload={handleUpload}
+              disabled={!selectedRepo}
+              initialCode={editingFile?.content}
+              initialFileName={editingFile?.path}
+            />
+          </div>
+        )}
+
+        {/* Version History */}
+        {token && selectedRepoObj && editingFile?.path && (
+          <div className="p-4 rounded-lg bg-card border border-border">
+            <VersionHistory
+              token={token}
+              owner={selectedRepoObj.owner.login}
+              repo={selectedRepoObj.name}
+              filePath={editingFile.path}
+              onRestore={handleRestoreVersion}
+            />
           </div>
         )}
       </div>

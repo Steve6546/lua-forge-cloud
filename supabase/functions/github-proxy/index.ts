@@ -31,6 +31,30 @@ serve(async (req) => {
     let response: Response;
 
     switch (action) {
+      case "check-scopes": {
+        response = await fetch("https://api.github.com/user", {
+          headers: githubHeaders,
+        });
+        const scopes = response.headers.get("x-oauth-scopes") || "";
+        const userData = await response.json();
+        if (!response.ok) {
+          return new Response(JSON.stringify({ error: userData.message || "Invalid token" }), {
+            status: response.status,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ scopes, user: userData }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "get-user": {
+        response = await fetch("https://api.github.com/user", {
+          headers: githubHeaders,
+        });
+        break;
+      }
+
       case "fetch-repos": {
         response = await fetch("https://api.github.com/user/repos?per_page=100&sort=updated", {
           headers: githubHeaders,
@@ -55,7 +79,6 @@ serve(async (req) => {
 
       case "upload-file": {
         const { owner, repo, path, content, message } = params;
-        // Check if file exists first to get sha for updates
         let sha: string | undefined;
         try {
           const existingFile = await fetch(
@@ -66,11 +89,11 @@ serve(async (req) => {
             const data = await existingFile.json();
             sha = data.sha;
           }
-        } catch { /* file doesn't exist, that's fine */ }
+        } catch { /* file doesn't exist */ }
 
         const body: Record<string, string> = {
           message: message || `Upload ${path}`,
-          content, // already base64 from client
+          content,
         };
         if (sha) body.sha = sha;
 
@@ -85,10 +108,57 @@ serve(async (req) => {
         break;
       }
 
-      case "get-user": {
-        response = await fetch("https://api.github.com/user", {
-          headers: githubHeaders,
-        });
+      case "list-files": {
+        const { owner, repo, path } = params;
+        const filePath = path ? `/${path}` : "";
+        response = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/contents${filePath}`,
+          { headers: githubHeaders }
+        );
+        break;
+      }
+
+      case "get-file": {
+        const { owner, repo, path } = params;
+        response = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+          { headers: githubHeaders }
+        );
+        break;
+      }
+
+      case "delete-file": {
+        const { owner, repo, path, sha, message } = params;
+        response = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+          {
+            method: "DELETE",
+            headers: githubHeaders,
+            body: JSON.stringify({
+              message: message || `Delete ${path}`,
+              sha,
+            }),
+          }
+        );
+        break;
+      }
+
+      case "list-commits": {
+        const { owner, repo, path } = params;
+        const query = path ? `?path=${encodeURIComponent(path)}` : "";
+        response = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/commits${query}`,
+          { headers: githubHeaders }
+        );
+        break;
+      }
+
+      case "get-commit-file": {
+        const { owner, repo, path, ref } = params;
+        response = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}`,
+          { headers: githubHeaders }
+        );
         break;
       }
 
@@ -102,7 +172,11 @@ serve(async (req) => {
     const data = await response.json();
 
     if (!response.ok) {
-      return new Response(JSON.stringify({ error: data.message || "GitHub API error", details: data }), {
+      let errorMsg = data.message || "GitHub API error";
+      if (response.status === 403 && errorMsg.includes("Resource not accessible")) {
+        errorMsg = "المفتاح لا يملك الصلاحيات المطلوبة. تأكد من تفعيل صلاحية repo في إعدادات المفتاح.";
+      }
+      return new Response(JSON.stringify({ error: errorMsg, details: data }), {
         status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
