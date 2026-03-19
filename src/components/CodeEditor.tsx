@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Upload, Loader2, FileCode2, Link, Copy, Check } from "lucide-react";
+import Editor from "@monaco-editor/react";
 
 interface CodeEditorProps {
   onUpload: (fileName: string, content: string) => Promise<string>;
@@ -43,6 +44,17 @@ const CodeEditor = ({ onUpload, disabled }: CodeEditorProps) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const copyLoadstring = () => {
+    const cmd = `loadstring(game:HttpGet("${rawUrl}"))()`;
+    navigator.clipboard.writeText(cmd);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleEditorChange = useCallback((value: string | undefined) => {
+    setCode(value || "");
+  }, []);
+
   return (
     <div className="space-y-3">
       <label className="text-sm font-mono text-muted-foreground flex items-center gap-2">
@@ -68,19 +80,33 @@ const CodeEditor = ({ onUpload, disabled }: CodeEditorProps) => {
           رفع الملف
         </Button>
       </div>
-      <div className="relative">
-        <div className="absolute top-0 left-0 right-0 h-8 bg-secondary/80 rounded-t-md flex items-center px-3 border-b border-border">
+
+      <div className="border border-border rounded-md overflow-hidden">
+        <div className="h-8 bg-secondary/80 flex items-center px-3 border-b border-border">
           <span className="text-xs font-mono text-muted-foreground">{fileName}</span>
         </div>
-        <textarea
+        <Editor
+          height="350px"
+          defaultLanguage="lua"
+          theme="vs-dark"
           value={code}
-          onChange={(e) => setCode(e.target.value)}
-          className="w-full h-80 bg-muted border border-border rounded-md p-3 pt-10 font-mono text-sm text-foreground resize-y focus:outline-none focus:ring-1 focus:ring-primary leading-relaxed"
-          spellCheck={false}
+          onChange={handleEditorChange}
+          options={{
+            minimap: { enabled: false },
+            fontSize: 14,
+            fontFamily: "'JetBrains Mono', monospace",
+            lineNumbers: "on",
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
+            tabSize: 4,
+            wordWrap: "on",
+            padding: { top: 8 },
+          }}
         />
       </div>
+
       {rawUrl && (
-        <div className="p-3 rounded-md bg-secondary border border-primary/30 space-y-2">
+        <div className="p-3 rounded-md bg-secondary border border-primary/30 space-y-3">
           <p className="text-xs font-mono text-primary flex items-center gap-1">
             <Link className="w-3 h-3" />
             ✓ تم الرفع بنجاح! رابط الملف:
@@ -92,6 +118,17 @@ const CodeEditor = ({ onUpload, disabled }: CodeEditorProps) => {
             <Button variant="outline" size="sm" onClick={copyUrl}>
               {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
             </Button>
+          </div>
+          <div className="pt-2 border-t border-border">
+            <p className="text-xs font-mono text-muted-foreground mb-1">🎮 كود التشغيل:</p>
+            <div className="flex gap-2 items-center">
+              <code className="text-xs font-mono text-warning bg-muted px-2 py-1 rounded flex-1 overflow-x-auto">
+                {`loadstring(game:HttpGet("${rawUrl}"))()`}
+              </code>
+              <Button variant="outline" size="sm" onClick={copyLoadstring}>
+                <Copy className="w-3 h-3" />
+              </Button>
+            </div>
           </div>
         </div>
       )}
