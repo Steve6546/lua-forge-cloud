@@ -1,16 +1,151 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState, useCallback } from "react";
+import { toast } from "sonner";
+import { Terminal } from "lucide-react";
+import TokenInput from "@/components/TokenInput";
+import RepoManager from "@/components/RepoManager";
+import CodeEditor from "@/components/CodeEditor";
+import * as github from "@/lib/github-api";
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+interface Repo {
+  full_name: string;
+  name: string;
+  owner: { login: string };
+  private: boolean;
+}
+
+const Index = () => {
+  const [token, setToken] = useState("");
+  const [username, setUsername] = useState("");
+  const [repos, setRepos] = useState<Repo[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState("");
+  const [loadingRepos, setLoadingRepos] = useState(false);
+
+  const handleConnect = useCallback(async (t: string) => {
+    try {
+      const user = await github.getUser(t);
+      setUsername(user.login);
+      setToken(t);
+      toast.success(`مرحباً ${user.login}!`);
+      // Fetch repos
+      setLoadingRepos(true);
+      const repoList = await github.fetchRepos(t);
+      setRepos(repoList);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "خطأ في الاتصال";
+      toast.error(msg);
+      throw err;
+    } finally {
+      setLoadingRepos(false);
+    }
+  }, []);
+
+  const handleRefreshRepos = useCallback(async () => {
+    if (!token) return;
+    setLoadingRepos(true);
+    try {
+      const repoList = await github.fetchRepos(token);
+      setRepos(repoList);
+      toast.success("تم تحديث المستودعات");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "خطأ";
+      toast.error(msg);
+    } finally {
+      setLoadingRepos(false);
+    }
+  }, [token]);
+
+  const handleCreateRepo = useCallback(
+    async (name: string, isPrivate: boolean) => {
+      try {
+        const repo = await github.createRepo(token, name, isPrivate);
+        toast.success(`تم إنشاء المستودع: ${repo.full_name}`);
+        setRepos((prev) => [repo, ...prev]);
+        setSelectedRepo(repo.full_name);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ في الإنشاء";
+        toast.error(msg);
+      }
+    },
+    [token]
+  );
+
+  const handleUpload = useCallback(
+    async (fileName: string, content: string): Promise<string> => {
+      const repo = repos.find((r) => r.full_name === selectedRepo);
+      if (!repo) {
+        toast.error("اختر مستودع أولاً");
+        return "";
+      }
+      try {
+        const result = await github.uploadFile(
+          token,
+          repo.owner.login,
+          repo.name,
+          fileName,
+          content
+        );
+        const rawUrl = `https://raw.githubusercontent.com/${repo.full_name}/main/${fileName}`;
+        toast.success("تم رفع الملف بنجاح!");
+        return rawUrl;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "خطأ في الرفع";
+        toast.error(msg);
+        return "";
+      }
+    },
+    [token, selectedRepo, repos]
+  );
+
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
+    <div className="min-h-screen bg-background p-4 md:p-8">
+      <div className="max-w-3xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-3 pb-4 border-b border-border">
+          <div className="p-2 rounded-md bg-primary/10 animate-pulse-glow">
+            <Terminal className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-xl font-mono font-bold text-foreground">
+              Lua Script Manager
+            </h1>
+            <p className="text-xs font-mono text-muted-foreground">
+              رفع وإدارة سكريبتات Lua عبر GitHub
+            </p>
+          </div>
+        </div>
+
+        {/* Token */}
+        <div className="p-4 rounded-lg bg-card border border-border">
+          <TokenInput
+            onConnect={handleConnect}
+            isConnected={!!token}
+            username={username}
+          />
+        </div>
+
+        {/* Repos */}
+        {token && (
+          <div className="p-4 rounded-lg bg-card border border-border">
+            <RepoManager
+              repos={repos}
+              selectedRepo={selectedRepo}
+              onSelectRepo={setSelectedRepo}
+              onCreateRepo={handleCreateRepo}
+              onRefresh={handleRefreshRepos}
+              loading={loadingRepos}
+            />
+          </div>
+        )}
+
+        {/* Editor */}
+        {token && (
+          <div className="p-4 rounded-lg bg-card border border-border">
+            <CodeEditor onUpload={handleUpload} disabled={!selectedRepo} />
+          </div>
+        )}
+      </div>
     </div>
   );
 };
-
-const Index = PlaceholderIndex;
 
 export default Index;
