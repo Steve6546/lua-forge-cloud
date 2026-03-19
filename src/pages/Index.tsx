@@ -26,7 +26,6 @@ const Index = () => {
       setUsername(user.login);
       setToken(t);
       toast.success(`مرحباً ${user.login}!`);
-      // Fetch repos
       setLoadingRepos(true);
       const repoList = await github.fetchRepos(t);
       setRepos(repoList);
@@ -37,6 +36,14 @@ const Index = () => {
     } finally {
       setLoadingRepos(false);
     }
+  }, []);
+
+  const handleDisconnect = useCallback(() => {
+    setToken("");
+    setUsername("");
+    setRepos([]);
+    setSelectedRepo("");
+    toast.info("تم قطع الاتصال");
   }, []);
 
   const handleRefreshRepos = useCallback(async () => {
@@ -63,7 +70,11 @@ const Index = () => {
         setSelectedRepo(repo.full_name);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "خطأ في الإنشاء";
-        toast.error(msg);
+        if (msg.includes("Resource not accessible")) {
+          toast.error("المفتاح لا يملك صلاحية إنشاء مستودعات. تأكد من تفعيل صلاحية repo");
+        } else {
+          toast.error(msg);
+        }
       }
     },
     [token]
@@ -77,7 +88,7 @@ const Index = () => {
         return "";
       }
       try {
-        const result = await github.uploadFile(
+        await github.uploadFile(
           token,
           repo.owner.login,
           repo.name,
@@ -101,7 +112,7 @@ const Index = () => {
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3 pb-4 border-b border-border">
-          <div className="p-2 rounded-md bg-primary/10 animate-pulse-glow">
+          <div className="p-2 rounded-md bg-primary/10">
             <Terminal className="w-6 h-6 text-primary" />
           </div>
           <div>
@@ -118,6 +129,7 @@ const Index = () => {
         <div className="p-4 rounded-lg bg-card border border-border">
           <TokenInput
             onConnect={handleConnect}
+            onDisconnect={handleDisconnect}
             isConnected={!!token}
             username={username}
           />
