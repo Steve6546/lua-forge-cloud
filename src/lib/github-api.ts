@@ -29,7 +29,8 @@ export const uploadFile = (
   repo: string,
   path: string,
   content: string,
-  message?: string
+  message?: string,
+  branch?: string
 ) =>
   callGitHub(token, {
     action: "upload-file",
@@ -38,13 +39,14 @@ export const uploadFile = (
     path,
     content: btoa(unescape(encodeURIComponent(content))),
     message,
+    branch,
   });
 
-export const listFiles = (token: string, owner: string, repo: string, path?: string) =>
-  callGitHub(token, { action: "list-files", owner, repo, path });
+export const listFiles = (token: string, owner: string, repo: string, path?: string, branch?: string) =>
+  callGitHub(token, { action: "list-files", owner, repo, path, branch });
 
-export const getFile = (token: string, owner: string, repo: string, path: string) =>
-  callGitHub(token, { action: "get-file", owner, repo, path });
+export const getFile = (token: string, owner: string, repo: string, path: string, branch?: string) =>
+  callGitHub(token, { action: "get-file", owner, repo, path, branch });
 
 export const deleteFile = (
   token: string,
@@ -67,3 +69,6 @@ export const getCommitFile = (
   ref: string
 ) =>
   callGitHub(token, { action: "get-commit-file", owner, repo, path, ref });
+
+export const listBranches = (token: string, owner: string, repo: string) =>
+  callGitHub(token, { action: "list-branches", owner, repo });

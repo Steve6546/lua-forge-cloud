@@ -1,12 +1,16 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { Terminal } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import TokenInput from "@/components/TokenInput";
 import RepoManager from "@/components/RepoManager";
 import CodeEditor from "@/components/CodeEditor";
 import FileBrowser from "@/components/FileBrowser";
 import VersionHistory from "@/components/VersionHistory";
 import ScopeChecker from "@/components/ScopeChecker";
+import BranchSelector from "@/components/BranchSelector";
+import SmartLoader from "@/components/SmartLoader";
+import DiffViewer from "@/components/DiffViewer";
 import * as github from "@/lib/github-api";
 
 interface Repo {
@@ -16,20 +20,29 @@ interface Repo {
   private: boolean;
 }
 
+const fadeUp = {
+  initial: { opacity: 0, y: 15 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -10 },
+  transition: { duration: 0.3 },
+};
+
 const Index = () => {
   const [token, setToken] = useState("");
   const [username, setUsername] = useState("");
   const [scopes, setScopes] = useState("");
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState("");
   const [loadingRepos, setLoadingRepos] = useState(false);
-  const [editingFile, setEditingFile] = useState<{ path: string; content: string } | null>(null);
+  const [editingFile, setEditingFile] = useState<{ path: string; content: string; originalContent?: string } | null>(null);
+  const [lastUploadUrl, setLastUploadUrl] = useState("");
+  const [showDiff, setShowDiff] = useState(false);
 
   const selectedRepoObj = repos.find((r) => r.full_name === selectedRepo);
 
   const handleConnect = useCallback(async (t: string) => {
     try {
-      // Check scopes first
       const scopeData = await github.checkScopes(t);
       setScopes(scopeData.scopes || "");
       setUsername(scopeData.user.login);
@@ -53,7 +66,9 @@ const Index = () => {
     setScopes("");
     setRepos([]);
     setSelectedRepo("");
+    setSelectedBranch("");
     setEditingFile(null);
+    setLastUploadUrl("");
     toast.info("تم قطع الاتصال");
   }, []);
 
@@ -95,9 +110,11 @@ const Index = () => {
         return "";
       }
       try {
-        await github.uploadFile(token, repo.owner.login, repo.name, fileName, content);
-        const rawUrl = `https://raw.githubusercontent.com/${repo.full_name}/main/${fileName}`;
+        await github.uploadFile(token, repo.owner.login, repo.name, fileName, content, undefined, selectedBranch || undefined);
+        const branch = selectedBranch || "main";
+        const rawUrl = `https://raw.githubusercontent.com/${repo.full_name}/${branch}/${fileName}`;
         toast.success("تم رفع الملف بنجاح!");
+        setLastUploadUrl(rawUrl);
         return rawUrl;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "خطأ في الرفع";
@@ -105,11 +122,12 @@ const Index = () => {
         return "";
       }
     },
-    [token, selectedRepo, repos]
+    [token, selectedRepo, repos, selectedBranch]
   );
 
   const handleEditFile = useCallback((path: string, content: string) => {
-    setEditingFile({ path, content });
+    setEditingFile({ path, content, originalContent: content });
+    setShowDiff(false);
     toast.info(`تم تحميل ${path} في المحرر`);
   }, []);
 
@@ -118,25 +136,30 @@ const Index = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-3xl mx-auto space-y-6">
+    <div className="min-h-screen bg-background p-3 sm:p-4 md:p-8">
+      <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-3 pb-4 border-b border-border">
-          <div className="p-2 rounded-md bg-primary/10 animate-pulse-glow">
-            <Terminal className="w-6 h-6 text-primary" />
+        <motion.div
+          className="flex items-center gap-3 pb-4 border-b border-border"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="p-2 sm:p-2.5 rounded-lg bg-primary/10 animate-pulse-glow">
+            <Terminal className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-mono font-bold text-foreground">
+            <h1 className="text-lg sm:text-xl font-mono font-bold text-foreground">
               Lua Script Manager
             </h1>
-            <p className="text-xs font-mono text-muted-foreground">
-              رفع وإدارة سكريبتات Lua عبر GitHub
+            <p className="text-[10px] sm:text-xs font-mono text-muted-foreground">
+              رفع وإدارة سكريبتات Lua عبر GitHub • IntelliSense + Roblox API
             </p>
           </div>
-        </div>
+        </motion.div>
 
         {/* Token */}
-        <div className="p-4 rounded-lg bg-card border border-border space-y-3">
+        <motion.div {...fadeUp} className="p-3 sm:p-4 rounded-lg bg-card border border-border space-y-3">
           <TokenInput
             onConnect={handleConnect}
             onDisconnect={handleDisconnect}
@@ -144,58 +167,98 @@ const Index = () => {
             username={username}
           />
           {token && scopes !== undefined && <ScopeChecker scopes={scopes} />}
-        </div>
+        </motion.div>
 
         {/* Repos */}
-        {token && (
-          <div className="p-4 rounded-lg bg-card border border-border">
-            <RepoManager
-              repos={repos}
-              selectedRepo={selectedRepo}
-              onSelectRepo={setSelectedRepo}
-              onCreateRepo={handleCreateRepo}
-              onRefresh={handleRefreshRepos}
-              loading={loadingRepos}
-            />
-          </div>
-        )}
+        <AnimatePresence>
+          {token && (
+            <motion.div {...fadeUp} className="p-3 sm:p-4 rounded-lg bg-card border border-border space-y-3">
+              <RepoManager
+                repos={repos}
+                selectedRepo={selectedRepo}
+                onSelectRepo={(r) => { setSelectedRepo(r); setSelectedBranch(""); }}
+                onCreateRepo={handleCreateRepo}
+                onRefresh={handleRefreshRepos}
+                loading={loadingRepos}
+              />
+              {/* Branch Selector */}
+              {selectedRepoObj && (
+                <BranchSelector
+                  token={token}
+                  owner={selectedRepoObj.owner.login}
+                  repo={selectedRepoObj.name}
+                  selectedBranch={selectedBranch}
+                  onSelectBranch={setSelectedBranch}
+                />
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* File Browser */}
-        {token && selectedRepoObj && (
-          <div className="p-4 rounded-lg bg-card border border-border">
-            <FileBrowser
-              token={token}
-              owner={selectedRepoObj.owner.login}
-              repo={selectedRepoObj.name}
-              onEditFile={handleEditFile}
-            />
-          </div>
-        )}
+        <AnimatePresence>
+          {token && selectedRepoObj && (
+            <motion.div {...fadeUp} className="p-3 sm:p-4 rounded-lg bg-card border border-border">
+              <FileBrowser
+                token={token}
+                owner={selectedRepoObj.owner.login}
+                repo={selectedRepoObj.name}
+                onEditFile={handleEditFile}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Editor */}
-        {token && (
-          <div className="p-4 rounded-lg bg-card border border-border">
-            <CodeEditor
-              onUpload={handleUpload}
-              disabled={!selectedRepo}
-              initialCode={editingFile?.content}
-              initialFileName={editingFile?.path}
-            />
-          </div>
-        )}
+        <AnimatePresence>
+          {token && (
+            <motion.div {...fadeUp} className="p-3 sm:p-4 rounded-lg bg-card border border-border">
+              <CodeEditor
+                onUpload={handleUpload}
+                disabled={!selectedRepo}
+                initialCode={editingFile?.content}
+                initialFileName={editingFile?.path}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Diff Viewer */}
+        <AnimatePresence>
+          {token && editingFile?.originalContent && showDiff && (
+            <motion.div {...fadeUp} className="p-3 sm:p-4 rounded-lg bg-card border border-border">
+              <DiffViewer
+                oldCode={editingFile.originalContent}
+                newCode={editingFile.content}
+                fileName={editingFile.path}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Smart Loader */}
+        <AnimatePresence>
+          {token && lastUploadUrl && (
+            <motion.div {...fadeUp} className="p-3 sm:p-4 rounded-lg bg-card border border-border">
+              <SmartLoader rawUrl={lastUploadUrl} />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Version History */}
-        {token && selectedRepoObj && editingFile?.path && (
-          <div className="p-4 rounded-lg bg-card border border-border">
-            <VersionHistory
-              token={token}
-              owner={selectedRepoObj.owner.login}
-              repo={selectedRepoObj.name}
-              filePath={editingFile.path}
-              onRestore={handleRestoreVersion}
-            />
-          </div>
-        )}
+        <AnimatePresence>
+          {token && selectedRepoObj && editingFile?.path && (
+            <motion.div {...fadeUp} className="p-3 sm:p-4 rounded-lg bg-card border border-border">
+              <VersionHistory
+                token={token}
+                owner={selectedRepoObj.owner.login}
+                repo={selectedRepoObj.name}
+                filePath={editingFile.path}
+                onRestore={handleRestoreVersion}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
