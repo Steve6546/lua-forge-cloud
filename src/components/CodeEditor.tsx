@@ -2,8 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Upload, Loader2, FileCode2, Link, Copy, Check, Save } from "lucide-react";
-import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
-import { configureRobloxLuaIntellisense } from "@/lib/robloxLuaIntellisense";
+import Editor from "@monaco-editor/react";
 
 interface CodeEditorProps {
   onUpload: (fileName: string, content: string) => Promise<string>;
@@ -49,7 +48,6 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
   const [copied, setCopied] = useState(false);
   const [autoSaved, setAutoSaved] = useState(false);
   const lastSaveRef = useRef<string>("");
-  const disposeIntellisenseRef = useRef<null | (() => void)>(null);
 
   // Load initial code when editing from file browser
   useEffect(() => {
@@ -96,25 +94,6 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
     setCode(value || "");
   }, []);
 
-  const handleBeforeMount = useCallback((monaco: Monaco) => {
-    if (!disposeIntellisenseRef.current) {
-      disposeIntellisenseRef.current = configureRobloxLuaIntellisense(monaco);
-    }
-  }, []);
-
-  const handleEditorMount: OnMount = useCallback((editor) => {
-    editor.focus();
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (disposeIntellisenseRef.current) {
-        disposeIntellisenseRef.current();
-        disposeIntellisenseRef.current = null;
-      }
-    };
-  }, []);
-
   return (
     <div className="space-y-3">
       <label className="text-sm font-mono text-muted-foreground flex items-center gap-2">
@@ -155,8 +134,6 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
           defaultLanguage="lua"
           theme="vs-dark"
           value={code}
-          beforeMount={handleBeforeMount}
-          onMount={handleEditorMount}
           onChange={handleEditorChange}
           options={{
             minimap: { enabled: false },
@@ -168,9 +145,6 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
             tabSize: 4,
             wordWrap: "on",
             padding: { top: 8 },
-            quickSuggestions: true,
-            suggestOnTriggerCharacters: true,
-            parameterHints: { enabled: true },
           }}
         />
       </div>
