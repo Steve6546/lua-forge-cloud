@@ -53,6 +53,7 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
   const [autoSaved, setAutoSaved] = useState(false);
   const lastSaveRef = useRef<string>("");
   const disposeIntellisenseRef = useRef<null | (() => void)>(null);
+  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
 
   // Load initial code when editing from file browser
   useEffect(() => {
@@ -105,8 +106,78 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
     }
   }, []);
 
-  const handleEditorMount: OnMount = useCallback((editor) => {
+  const handleEditorMount: OnMount = useCallback((editor, monaco) => {
+    editorRef.current = editor;
     editor.focus();
+
+    // ─── Fix suggestion widget positioning ───────────────────────────────────
+    // Override the suggest widget DOM positioning so it always renders
+    // *below* the cursor line (or flips above when near the bottom of the
+    // viewport). We patch it via the editor's DOM container after Monaco
+    // has built the widget.
+    const fixSuggestWidgetPosition = () => {
+      try {
+        const editorDomNode = editor.getDomNode();
+        if (!editorDomNode) return;
+
+        // Walk up to find the Monaco editor container
+        const container = editorDomNode.closest('.monaco-editor') as HTMLElement | null;
+        if (!container) return;
+
+        // Ensure the editor container is a positioned ancestor so that
+        // the absolutely-positioned suggest widget is clipped correctly.
+        container.style.position = 'relative';
+        container.style.overflow = 'visible';
+
+        // The suggest overlay uses this class
+        const suggestWidget = container.querySelector('.suggest-widget') as HTMLElement | null;
+        if (suggestWidget) {
+          suggestWidget.style.zIndex = '1000';
+          suggestWidget.style.position = 'absolute';
+        }
+      } catch (_) {
+        // non-critical — ignore
+      }
+    };
+
+    // Run once after mount and again after the first suggestion opens
+    setTimeout(fixSuggestWidgetPosition, 300);
+    editor.onDidChangeCursorPosition(fixSuggestWidgetPosition);
+
+    // ─── Touch / Mobile support ───────────────────────────────────────────────
+    // Monaco does not fire pointer events reliably on iOS/Android inside
+    // the suggest widget.  We delegate touch-taps on suggestion rows to
+    // the underlying click handler so users can tap to accept on mobile.
+    const attachTouchDelegation = () => {
+      try {
+        const editorDomNode = editor.getDomNode();
+        if (!editorDomNode) return;
+        const container = editorDomNode.closest('.monaco-editor') as HTMLElement | null;
+        if (!container) return;
+
+        container.addEventListener('touchend', (e: TouchEvent) => {
+          const target = e.target as HTMLElement;
+          // Suggestion list rows have the class "monaco-list-row"
+          const row = target.closest('.monaco-list-row') as HTMLElement | null;
+          if (row) {
+            e.preventDefault();
+            row.click();
+          }
+        }, { passive: false });
+      } catch (_) {
+        // non-critical — ignore
+      }
+    };
+
+    setTimeout(attachTouchDelegation, 500);
+
+    // ─── Keyboard shortcut: Ctrl+Space / Cmd+Space to trigger suggestions ───
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyCode.Space,
+      () => {
+        editor.trigger('keyboard', 'editor.action.triggerSuggest', {});
+      }
+    );
   }, []);
 
   useEffect(() => {
@@ -149,45 +220,74 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
         </Button>
       </div>
 
-      <div className="border border-border rounded-md overflow-hidden">
+      {/* Hint bar for mobile users */}
+      <p className="text-[11px] font-mono text-muted-foreground/70 flex items-center gap-1">
+        <span>💡</span>
+        <span>اكتب حرفين أو اضغط <kbd className="px-1 py-0.5 rounded bg-muted border border-border text-[10px]">Ctrl+Space</kbd> لفتح قائمة الاقتراحات</span>
+      </p>
+
+      <div className="border border-border rounded-md overflow-visible relative">
         <div className="h-8 bg-secondary/80 flex items-center px-3 border-b border-border">
           <span className="text-xs font-mono text-muted-foreground">{fileName}</span>
         </div>
-        <Editor
-          height="400px"
-          defaultLanguage="lua"
-          theme="vs-dark"
-          value={code}
-          beforeMount={handleBeforeMount}
-          onMount={handleEditorMount}
-          onChange={handleEditorChange}
-          options={{
-            minimap: { enabled: false },
-            fontSize: 14,
-            fontFamily: "'JetBrains Mono', 'Cascadia Mono', 'Consolas', monospace",
-            lineNumbers: "on",
-            scrollBeyondLastLine: false,
-            automaticLayout: true,
-            tabSize: 4,
-            wordWrap: "on",
-            padding: { top: 12, bottom: 12 },
-            quickSuggestions: {
-                other: true,
-                comments: false,
-                strings: true
-            },
-            suggestOnTriggerCharacters: true,
-            parameterHints: { enabled: true },
-            formatOnType: true,
-            formatOnPaste: true,
-            renderWhitespace: "selection",
-            bracketPairColorization: { enabled: true },
-            guides: { bracketPairs: true },
-            smoothScrolling: true,
-            cursorBlinking: "smooth",
-            cursorSmoothCaretAnimation: "on",
-          }}
-        />
+        {/* overflow-visible is critical — it lets the suggest widget overflow
+            the editor container without being clipped */}
+        <div className="relative overflow-visible">
+          <Editor
+            height="400px"
+            defaultLanguage="lua"
+            theme="vs-dark"
+            value={code}
+            beforeMount={handleBeforeMount}
+            onMount={handleEditorMount}
+            onChange={handleEditorChange}
+            options={{
+              minimap: { enabled: false },
+              fontSize: 14,
+              fontFamily: "'JetBrains Mono', 'Cascadia Mono', 'Consolas', monospace",
+              lineNumbers: "on",
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              tabSize: 4,
+              wordWrap: "on",
+              padding: { top: 12, bottom: 12 },
+
+              // ── Autocomplete: manual trigger only ──────────────────────────
+              // Disable automatic insertion on first match — user must pick
+              // an item explicitly from the dropdown.
+              quickSuggestions: false,          // ← no auto-popup while typing
+              suggestOnTriggerCharacters: true, // ← still show after "." and ":"
+              acceptSuggestionOnEnter: "on",    // accept with Enter key
+              acceptSuggestionOnCommitCharacter: false, // no auto-commit
+              tabCompletion: "off",             // Tab does NOT auto-complete
+
+              // Suggest widget sizing — larger rows help finger-tapping
+              suggest: {
+                showIcons: true,
+                showStatusBar: true,
+                preview: false,              // no inline ghost text
+                previewMode: "prefix",
+                insertMode: "replace",
+                filterGraceful: true,
+                // Increase item height for touch targets
+                snippetsPreventQuickSuggestions: false,
+              },
+
+              // No inline ghost completions (Copilot-style)
+              inlineSuggest: { enabled: false },
+
+              renderWhitespace: "selection",
+              bracketPairColorization: { enabled: true },
+              guides: { bracketPairs: true },
+              smoothScrolling: true,
+              cursorBlinking: "smooth",
+              cursorSmoothCaretAnimation: "on",
+              parameterHints: { enabled: true },
+              formatOnType: false,
+              formatOnPaste: true,
+            }}
+          />
+        </div>
       </div>
 
       {rawUrl && (

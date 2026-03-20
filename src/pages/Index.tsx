@@ -147,7 +147,7 @@ const Index = () => {
         </div>
 
         {/* Repos */}
-        {true {token && ({token && ( (
+        {token && (
           <div className="p-4 rounded-lg bg-card border border-border">
             <RepoManager
               repos={repos}
@@ -173,7 +173,7 @@ const Index = () => {
         )}
 
         {/* Editor */}
-        {true {token && ({token && ( (
+        {token && (
           <div className="p-4 rounded-lg bg-card border border-border">
             <CodeEditor
               onUpload={handleUpload}
