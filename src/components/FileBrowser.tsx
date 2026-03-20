@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  FileCode2,
-  Folder,
-  Trash2,
-  Edit3,
-  Loader2,
-  RefreshCw,
-  ChevronRight,
-  ArrowLeft,
-} from "lucide-react";
+import { decodeBase64Utf8 } from "@/lib/base64";
 import * as github from "@/lib/github-api";
 import { toast } from "sonner";
+import {
+  ArrowLeft,
+  Edit3,
+  FileCode2,
+  Folder,
+  Loader2,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 
 interface FileItem {
   name: string;
@@ -21,153 +21,168 @@ interface FileItem {
   size?: number;
 }
 
+export interface LoadedRepoFile {
+  path: string;
+  content: string;
+  sha?: string;
+}
+
 interface FileBrowserProps {
   token: string;
   owner: string;
   repo: string;
-  onEditFile: (path: string, content: string) => void;
+  branch: string;
+  onEditFile: (file: LoadedRepoFile) => void;
 }
 
-const FileBrowser = ({ token, owner, repo, onEditFile }: FileBrowserProps) => {
+const FileBrowser = ({ token, owner, repo, branch, onEditFile }: FileBrowserProps) => {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPath, setCurrentPath] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const loadFiles = useCallback(async (path?: string) => {
+    if (!branch) {
+      setFiles([]);
+      return;
+    }
+
     setLoading(true);
     try {
-      const data = await github.listFiles(token, owner, repo, path);
+      const data = await github.listFiles(token, owner, repo, path, branch);
       const items = Array.isArray(data) ? data : [];
-      setFiles(items.map((f: any) => ({
-        name: f.name,
-        path: f.path,
-        type: f.type,
-        sha: f.sha,
-        size: f.size,
+      setFiles(items.map((file: FileItem) => ({
+        name: file.name,
+        path: file.path,
+        type: file.type,
+        sha: file.sha,
+        size: file.size,
       })));
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "خطأ في تحميل الملفات";
-      toast.error(msg);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "تعذر تحميل ملفات المستودع.");
       setFiles([]);
     } finally {
       setLoading(false);
     }
-  }, [token, owner, repo]);
+  }, [branch, owner, repo, token]);
 
   useEffect(() => {
-    loadFiles(currentPath || undefined);
+    setCurrentPath("");
+  }, [repo, branch]);
+
+  useEffect(() => {
+    void loadFiles(currentPath || undefined);
   }, [currentPath, loadFiles]);
 
-  const handleEdit = async (filePath: string) => {
+  const handleEdit = async (path: string) => {
     try {
-      const data = await github.getFile(token, owner, repo, filePath);
-      const content = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ""))));
-      onEditFile(filePath, content);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "خطأ في تحميل الملف";
-      toast.error(msg);
+      const data = await github.getFile(token, owner, repo, path, branch);
+      onEditFile({
+        path,
+        sha: data.sha,
+        content: decodeBase64Utf8(data.content ?? ""),
+      });
+      toast.success(`تم فتح ${path} من الفرع ${branch}.`);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "تعذر فتح الملف.");
     }
   };
 
-  const handleDelete = async (filePath: string, sha: string) => {
-    setDeleting(filePath);
+  const handleDelete = async (path: string, sha: string) => {
+    setDeleting(path);
     try {
-      await github.deleteFile(token, owner, repo, filePath, sha);
-      toast.success(`تم حذف ${filePath}`);
-      loadFiles(currentPath || undefined);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "خطأ في الحذف";
-      toast.error(msg);
+      await github.deleteFile(token, owner, repo, path, sha, `Delete ${path}`, branch);
+      toast.success(`تم حذف ${path} من ${branch}.`);
+      await loadFiles(currentPath || undefined);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "تعذر حذف الملف.");
     } finally {
       setDeleting(null);
     }
   };
 
-  const navigateToDir = (path: string) => setCurrentPath(path);
-  const navigateUp = () => {
-    const parts = currentPath.split("/");
-    parts.pop();
-    setCurrentPath(parts.join("/"));
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <label className="text-sm font-mono text-muted-foreground flex items-center gap-2">
-          <Folder className="w-4 h-4 text-primary" />
-          ملفات المستودع
-        </label>
-        <Button variant="ghost" size="sm" onClick={() => loadFiles(currentPath || undefined)} disabled={loading}>
-          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+        <div>
+          <p className="text-sm font-semibold text-foreground">File Browser</p>
+          <p className="text-xs text-muted-foreground font-mono">{branch || "No branch selected"}</p>
+        </div>
+        <Button variant="outline" size="icon" onClick={() => loadFiles(currentPath || undefined)} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
         </Button>
       </div>
 
-      {currentPath && (
-        <Button variant="ghost" size="sm" onClick={navigateUp} className="text-xs gap-1 text-muted-foreground">
-          <ArrowLeft className="w-3 h-3" />
+      {currentPath ? (
+        <Button variant="ghost" size="sm" onClick={() => setCurrentPath(currentPath.split("/").slice(0, -1).join("/"))}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
           رجوع
         </Button>
-      )}
+      ) : null}
 
-      {currentPath && (
-        <p className="text-xs font-mono text-muted-foreground/60">📁 {currentPath}</p>
-      )}
-
-      {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-5 h-5 animate-spin text-primary" />
-        </div>
-      ) : files.length === 0 ? (
-        <p className="text-xs font-mono text-muted-foreground text-center py-4">لا توجد ملفات</p>
-      ) : (
-        <div className="space-y-1">
-          {files
-            .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1))
-            .map((file) => (
-              <div
-                key={file.path}
-                className="flex items-center justify-between p-2 rounded-md hover:bg-secondary/50 transition-colors group"
-              >
+      <div className="rounded-2xl border border-border bg-secondary/20 p-2">
+        {loading ? (
+          <div className="flex min-h-40 items-center justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          </div>
+        ) : files.length === 0 ? (
+          <div className="min-h-40 grid place-items-center text-sm text-muted-foreground">
+            لا توجد ملفات في هذا المسار.
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {files
+              .sort((left, right) => {
+                if (left.type !== right.type) {
+                  return left.type === "dir" ? -1 : 1;
+                }
+                return left.name.localeCompare(right.name);
+              })
+              .map((file) => (
                 <div
-                  className={`flex items-center gap-2 flex-1 min-w-0 ${file.type === "dir" ? "cursor-pointer" : ""}`}
-                  onClick={() => file.type === "dir" && navigateToDir(file.path)}
+                  key={file.path}
+                  className="flex items-center justify-between gap-3 rounded-xl px-3 py-2 hover:bg-secondary/70"
                 >
-                  {file.type === "dir" ? (
-                    <Folder className="w-4 h-4 text-warning shrink-0" />
-                  ) : (
-                    <FileCode2 className="w-4 h-4 text-primary shrink-0" />
-                  )}
-                  <span className="text-sm font-mono text-foreground truncate">{file.name}</span>
-                  {file.type === "dir" && <ChevronRight className="w-3 h-3 text-muted-foreground" />}
-                  {file.size !== undefined && file.type === "file" && (
-                    <span className="text-xs text-muted-foreground/50">{(file.size / 1024).toFixed(1)}KB</span>
-                  )}
+                  <button
+                    type="button"
+                    className="flex flex-1 items-center gap-3 text-left"
+                    onClick={() => file.type === "dir" ? setCurrentPath(file.path) : handleEdit(file.path)}
+                  >
+                    {file.type === "dir" ? (
+                      <Folder className="h-4 w-4 text-amber-400" />
+                    ) : (
+                      <FileCode2 className="h-4 w-4 text-primary" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-sm">{file.name}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">{file.path}</p>
+                    </div>
+                  </button>
+
+                  {file.type === "file" ? (
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => handleEdit(file.path)}>
+                        <Edit3 className="h-4 w-4 text-cyan-400" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(file.path, file.sha)}
+                        disabled={deleting === file.path}
+                      >
+                        {deleting === file.path ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        )}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
-                {file.type === "file" && (
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="sm" onClick={() => handleEdit(file.path)} className="h-7 px-2">
-                      <Edit3 className="w-3 h-3 text-accent" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(file.path, file.sha)}
-                      disabled={deleting === file.path}
-                      className="h-7 px-2"
-                    >
-                      {deleting === file.path ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-3 h-3 text-destructive" />
-                      )}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ))}
-        </div>
-      )}
+              ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
