@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -56,8 +56,25 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-background text-foreground;
+    font-family: "Manrope", sans-serif;
+    min-height: 100vh;
   }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 10% 20%, rgba(0, 212, 255, 0.1), transparent 28%),
+    radial-gradient(circle at 80% 0%, rgba(34, 197, 94, 0.08), transparent 24%);
+  z-index: -1;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

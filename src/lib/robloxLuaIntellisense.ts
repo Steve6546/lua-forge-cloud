@@ -1164,7 +1164,16 @@ export const configureRobloxLuaIntellisense = (monaco: Monaco) => {
       const isProperty = lineContent.endsWith(".");
       const isContext  = isMethod || isProperty;
 
-      const suggestions: Parameters<typeof completionProvider["provideCompletionItems"]>[1] extends infer T ? any[] : any[] = [];
+      const suggestions: Array<{
+        label: string;
+        kind: number;
+        insertText: string;
+        range: typeof range;
+        insertTextRules?: number;
+        detail?: string;
+        documentation?: { value: string; isTrusted: true };
+        sortText?: string;
+      }> = [];
 
       if (!isContext) {
         // ── Top-level completions: keywords + globals ────────────────────────

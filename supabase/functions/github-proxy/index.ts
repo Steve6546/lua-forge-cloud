@@ -6,6 +6,12 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 };
 
+const decodeBase64Utf8 = (value: string) =>
+  new TextDecoder().decode(Uint8Array.from(atob(value.replace(/\n/g, "")), (char) => char.charCodeAt(0)));
+
+const encodeBase64Utf8 = (value: string) =>
+  btoa(String.fromCharCode(...new TextEncoder().encode(value)));
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -62,6 +68,14 @@ serve(async (req) => {
         break;
       }
 
+      case "get-repo": {
+        const { owner, repo } = params;
+        response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+          headers: githubHeaders,
+        });
+        break;
+      }
+
       case "create-repo": {
         const { name, description, isPrivate } = params;
         response = await fetch("https://api.github.com/user/repos", {
@@ -77,12 +91,46 @@ serve(async (req) => {
         break;
       }
 
+      case "list-branches": {
+        const { owner, repo } = params;
+        response = await fetch(`https://api.github.com/repos/${owner}/${repo}/branches?per_page=100`, {
+          headers: githubHeaders,
+        });
+        break;
+      }
+
+      case "create-branch": {
+        const { owner, repo, branch, fromBranch } = params;
+        const sourceBranchResponse = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${fromBranch}`,
+          { headers: githubHeaders },
+        );
+
+        const sourceBranch = await sourceBranchResponse.json();
+        if (!sourceBranchResponse.ok) {
+          return new Response(JSON.stringify({ error: sourceBranch.message || "Failed to resolve source branch" }), {
+            status: sourceBranchResponse.status,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        response = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+          method: "POST",
+          headers: githubHeaders,
+          body: JSON.stringify({
+            ref: `refs/heads/${branch}`,
+            sha: sourceBranch.object.sha,
+          }),
+        });
+        break;
+      }
+
       case "upload-file": {
-        const { owner, repo, path, content, message } = params;
+        const { owner, repo, path, content, message, branch, sha: expectedSha } = params;
         let sha: string | undefined;
         try {
           const existingFile = await fetch(
-            `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+            `https://api.github.com/repos/${owner}/${repo}/contents/${path}${branch ? `?ref=${branch}` : ""}`,
             { headers: githubHeaders }
           );
           if (existingFile.ok) {
@@ -91,11 +139,24 @@ serve(async (req) => {
           }
         } catch { /* file doesn't exist */ }
 
+        if (expectedSha && sha && expectedSha !== sha) {
+          return new Response(JSON.stringify({
+            error: "The file changed on the remote branch. Refresh before overwriting.",
+            code: "REMOTE_CONFLICT",
+            expectedSha,
+            actualSha: sha,
+          }), {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
         const body: Record<string, string> = {
           message: message || `Upload ${path}`,
-          content,
+          content: encodeBase64Utf8(String(content ?? "")),
         };
         if (sha) body.sha = sha;
+        if (branch) body.branch = String(branch);
 
         response = await fetch(
           `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
@@ -109,26 +170,28 @@ serve(async (req) => {
       }
 
       case "list-files": {
-        const { owner, repo, path } = params;
+        const { owner, repo, path, ref } = params;
         const filePath = path ? `/${path}` : "";
+        const query = ref ? `?ref=${encodeURIComponent(String(ref))}` : "";
         response = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/contents${filePath}`,
+          `https://api.github.com/repos/${owner}/${repo}/contents${filePath}${query}`,
           { headers: githubHeaders }
         );
         break;
       }
 
       case "get-file": {
-        const { owner, repo, path } = params;
+        const { owner, repo, path, ref } = params;
+        const query = ref ? `?ref=${encodeURIComponent(String(ref))}` : "";
         response = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+          `https://api.github.com/repos/${owner}/${repo}/contents/${path}${query}`,
           { headers: githubHeaders }
         );
         break;
       }
 
       case "delete-file": {
-        const { owner, repo, path, sha, message } = params;
+        const { owner, repo, path, sha, message, branch } = params;
         response = await fetch(
           `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
           {
@@ -137,6 +200,7 @@ serve(async (req) => {
             body: JSON.stringify({
               message: message || `Delete ${path}`,
               sha,
+              branch,
             }),
           }
         );
@@ -144,10 +208,12 @@ serve(async (req) => {
       }
 
       case "list-commits": {
-        const { owner, repo, path } = params;
-        const query = path ? `?path=${encodeURIComponent(path)}` : "";
+        const { owner, repo, path, sha } = params;
+        const query = new URLSearchParams();
+        if (path) query.set("path", String(path));
+        if (sha) query.set("sha", String(sha));
         response = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/commits${query}`,
+          `https://api.github.com/repos/${owner}/${repo}/commits${query.toString() ? `?${query}` : ""}`,
           { headers: githubHeaders }
         );
         break;
@@ -160,6 +226,39 @@ serve(async (req) => {
           { headers: githubHeaders }
         );
         break;
+      }
+
+      case "compare-file": {
+        const { owner, repo, path, base, head } = params;
+        const [baseResponse, headResponse] = await Promise.all([
+          fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(String(base))}`, {
+            headers: githubHeaders,
+          }),
+          fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(String(head))}`, {
+            headers: githubHeaders,
+          }),
+        ]);
+
+        const baseJson = await baseResponse.json();
+        const headJson = await headResponse.json();
+
+        if (!baseResponse.ok || !headResponse.ok) {
+          return new Response(JSON.stringify({
+            error: baseJson.message || headJson.message || "Unable to compare file versions",
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        return new Response(JSON.stringify({
+          base: decodeBase64Utf8(baseJson.content ?? ""),
+          head: decodeBase64Utf8(headJson.content ?? ""),
+          baseSha: baseJson.sha,
+          headSha: headJson.sha,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       default:

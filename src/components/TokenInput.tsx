@@ -27,7 +27,7 @@ const TokenInput = ({ onConnect, onDisconnect, isConnected, username }: TokenInp
         localStorage.removeItem(TOKEN_KEY);
       }).finally(() => setLoading(false));
     }
-  }, []);
+  }, [isConnected, onConnect]);
 
   const handleConnect = async () => {
     if (!token.trim()) return;
