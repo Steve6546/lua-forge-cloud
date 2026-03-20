@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-github-token",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-github-token, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 };
 
@@ -32,9 +32,7 @@ serve(async (req) => {
 
     switch (action) {
       case "check-scopes": {
-        response = await fetch("https://api.github.com/user", {
-          headers: githubHeaders,
-        });
+        response = await fetch("https://api.github.com/user", { headers: githubHeaders });
         const scopes = response.headers.get("x-oauth-scopes") || "";
         const userData = await response.json();
         if (!response.ok) {
@@ -49,16 +47,12 @@ serve(async (req) => {
       }
 
       case "get-user": {
-        response = await fetch("https://api.github.com/user", {
-          headers: githubHeaders,
-        });
+        response = await fetch("https://api.github.com/user", { headers: githubHeaders });
         break;
       }
 
       case "fetch-repos": {
-        response = await fetch("https://api.github.com/user/repos?per_page=100&sort=updated", {
-          headers: githubHeaders,
-        });
+        response = await fetch("https://api.github.com/user/repos?per_page=100&sort=updated", { headers: githubHeaders });
         break;
       }
 
@@ -78,11 +72,12 @@ serve(async (req) => {
       }
 
       case "upload-file": {
-        const { owner, repo, path, content, message } = params;
+        const { owner, repo, path, content, message, branch } = params;
         let sha: string | undefined;
         try {
+          const ref = branch ? `?ref=${branch}` : "";
           const existingFile = await fetch(
-            `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+            `https://api.github.com/repos/${owner}/${repo}/contents/${path}${ref}`,
             { headers: githubHeaders }
           );
           if (existingFile.ok) {
@@ -96,32 +91,31 @@ serve(async (req) => {
           content,
         };
         if (sha) body.sha = sha;
+        if (branch) body.branch = branch;
 
         response = await fetch(
           `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
-          {
-            method: "PUT",
-            headers: githubHeaders,
-            body: JSON.stringify(body),
-          }
+          { method: "PUT", headers: githubHeaders, body: JSON.stringify(body) }
         );
         break;
       }
 
       case "list-files": {
-        const { owner, repo, path } = params;
+        const { owner, repo, path, branch } = params;
         const filePath = path ? `/${path}` : "";
+        const ref = branch ? `?ref=${branch}` : "";
         response = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/contents${filePath}`,
+          `https://api.github.com/repos/${owner}/${repo}/contents${filePath}${ref}`,
           { headers: githubHeaders }
         );
         break;
       }
 
       case "get-file": {
-        const { owner, repo, path } = params;
+        const { owner, repo, path, branch } = params;
+        const ref = branch ? `?ref=${branch}` : "";
         response = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+          `https://api.github.com/repos/${owner}/${repo}/contents/${path}${ref}`,
           { headers: githubHeaders }
         );
         break;
@@ -134,10 +128,7 @@ serve(async (req) => {
           {
             method: "DELETE",
             headers: githubHeaders,
-            body: JSON.stringify({
-              message: message || `Delete ${path}`,
-              sha,
-            }),
+            body: JSON.stringify({ message: message || `Delete ${path}`, sha }),
           }
         );
         break;
@@ -157,6 +148,15 @@ serve(async (req) => {
         const { owner, repo, path, ref } = params;
         response = await fetch(
           `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}`,
+          { headers: githubHeaders }
+        );
+        break;
+      }
+
+      case "list-branches": {
+        const { owner, repo } = params;
+        response = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/branches`,
           { headers: githubHeaders }
         );
         break;
