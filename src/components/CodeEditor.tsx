@@ -12,14 +12,17 @@ interface CodeEditorProps {
   initialFileName?: string;
 }
 
-const DEFAULT_LUA = `-- Lua Script
+const DEFAULT_LUA = `-- Roblox Lua Script
 -- Write your code here
 
-function hello(name)
-    print("Hello, " .. name .. "!")
-end
+local Players = game:GetService("Players")
+local workspace = game:GetService("Workspace")
 
-hello("World")
+print("Hello from Roblox Studio!")
+
+Players.PlayerAdded:Connect(function(player)
+    print(player.Name .. " joined the game!")
+end)
 `;
 
 const AUTOSAVE_KEY = "lua_autosave";
@@ -119,7 +122,7 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
     <div className="space-y-3">
       <label className="text-sm font-mono text-muted-foreground flex items-center gap-2">
         <FileCode2 className="w-4 h-4 text-primary" />
-        محرر الكود (Lua Editor)
+        محرر الكود (Roblox Lua Editor)
         {autoSaved && (
           <span className="text-[10px] text-primary/60 flex items-center gap-1 animate-pulse">
             <Save className="w-2.5 h-2.5" /> حفظ تلقائي
@@ -151,7 +154,7 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
           <span className="text-xs font-mono text-muted-foreground">{fileName}</span>
         </div>
         <Editor
-          height="350px"
+          height="400px"
           defaultLanguage="lua"
           theme="vs-dark"
           value={code}
@@ -161,16 +164,28 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
           options={{
             minimap: { enabled: false },
             fontSize: 14,
-            fontFamily: "'JetBrains Mono', monospace",
+            fontFamily: "'JetBrains Mono', 'Cascadia Mono', 'Consolas', monospace",
             lineNumbers: "on",
             scrollBeyondLastLine: false,
             automaticLayout: true,
             tabSize: 4,
             wordWrap: "on",
-            padding: { top: 8 },
-            quickSuggestions: true,
+            padding: { top: 12, bottom: 12 },
+            quickSuggestions: {
+                other: true,
+                comments: false,
+                strings: true
+            },
             suggestOnTriggerCharacters: true,
             parameterHints: { enabled: true },
+            formatOnType: true,
+            formatOnPaste: true,
+            renderWhitespace: "selection",
+            bracketPairColorization: { enabled: true },
+            guides: { bracketPairs: true },
+            smoothScrolling: true,
+            cursorBlinking: "smooth",
+            cursorSmoothCaretAnimation: "on",
           }}
         />
       </div>
