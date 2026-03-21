@@ -72,3 +72,21 @@ export const getCommitFile = (
 
 export const listBranches = (token: string, owner: string, repo: string) =>
   callGitHub(token, { action: "list-branches", owner, repo });
+
+// Create folder by uploading a .gitkeep placeholder
+export const createFolder = (
+  token: string,
+  owner: string,
+  repo: string,
+  folderPath: string,
+  branch?: string
+) =>
+  callGitHub(token, {
+    action: "upload-file",
+    owner,
+    repo,
+    path: `${folderPath}/.gitkeep`,
+    content: btoa(""),
+    message: `Create folder ${folderPath}`,
+    branch,
+  });

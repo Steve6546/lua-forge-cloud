@@ -2,8 +2,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Upload, Loader2, FileCode2, Link, Copy, Check, Save, Wand2, AlertTriangle,
-  Terminal, ChevronDown, ChevronUp,
+  Upload, Loader2, Link, Copy, Check, Save,
+  AlertTriangle, ChevronDown, ChevronUp, Terminal, Wand2,
 } from "lucide-react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { setupMonacoLua, runLuaLint } from "@/lib/setup-monaco-lua";
@@ -15,6 +15,7 @@ interface CodeEditorProps {
   disabled: boolean;
   initialCode?: string;
   initialFileName?: string;
+  onCodeChange?: (code: string) => void;
 }
 
 const DEFAULT_LUA = `-- Lua Script
@@ -33,7 +34,7 @@ hello("World")
 const AUTOSAVE_KEY = "lua_autosave";
 const AUTOSAVE_INTERVAL = 5000;
 
-const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEditorProps) => {
+const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName, onCodeChange }: CodeEditorProps) => {
   const [code, setCode] = useState(() => {
     const saved = localStorage.getItem(AUTOSAVE_KEY);
     if (saved) {
@@ -62,7 +63,10 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
   const editorRef = useRef<any>(null);
 
   useEffect(() => {
-    if (initialCode !== undefined) setCode(initialCode);
+    if (initialCode !== undefined) {
+      setCode(initialCode);
+      onCodeChange?.(initialCode);
+    }
   }, [initialCode]);
 
   useEffect(() => {
@@ -99,7 +103,6 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
     editorRef.current = editor;
     setupMonacoLua(monaco);
 
-    // Define custom dark theme
     monaco.editor.defineTheme("lua-dark", {
       base: "vs-dark",
       inherit: true,
@@ -111,18 +114,17 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
         { token: "type", foreground: "4ec9b0" },
       ],
       colors: {
-        "editor.background": "#0d1117",
-        "editor.foreground": "#e6edf3",
-        "editor.lineHighlightBackground": "#161b22",
+        "editor.background": "#0f1218",
+        "editor.foreground": "#d4d4d4",
+        "editor.lineHighlightBackground": "#151b24",
         "editor.selectionBackground": "#264f78",
         "editorCursor.foreground": "#58a6ff",
-        "editorLineNumber.foreground": "#484f58",
-        "editorLineNumber.activeForeground": "#e6edf3",
+        "editorLineNumber.foreground": "#3b4048",
+        "editorLineNumber.activeForeground": "#d4d4d4",
       },
     });
     monaco.editor.setTheme("lua-dark");
 
-    // Initial lint
     const model = editor.getModel();
     if (model) {
       const errors = runLuaLint(monaco, model);
@@ -149,84 +151,75 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
   };
 
   const handleEditorChange = useCallback((value: string | undefined) => {
-    setCode(value || "");
-  }, []);
+    const v = value || "";
+    setCode(v);
+    onCodeChange?.(v);
+  }, [onCodeChange]);
 
   const errorCount = lintErrors.filter((e) => e.severity === "error").length;
   const warningCount = lintErrors.filter((e) => e.severity === "warning").length;
 
   return (
-    <motion.div
-      className="space-y-3"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-mono text-muted-foreground flex items-center gap-2">
-          <FileCode2 className="w-4 h-4 text-primary" />
-          محرر الكود
-          <span className="text-[10px] text-muted-foreground/50">IntelliSense + Roblox API</span>
-        </label>
+    <div className="flex flex-col h-full">
+      {/* Editor toolbar */}
+      <div className="h-9 flex items-center justify-between px-3 bg-card border-b border-border shrink-0">
         <div className="flex items-center gap-2">
+          <Terminal className="w-3 h-3 text-primary" />
+          <Input
+            value={fileName}
+            onChange={(e) => setFileName(e.target.value)}
+            className="h-6 text-xs font-mono bg-transparent border-none px-1 w-40 focus-visible:ring-0"
+            placeholder="script.lua"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
           <AnimatePresence>
             {autoSaved && (
               <motion.span
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 10 }}
-                className="text-[10px] text-primary/60 flex items-center gap-1"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="text-[9px] text-primary/50 flex items-center gap-1"
               >
-                <Save className="w-2.5 h-2.5" /> حفظ تلقائي
+                <Save className="w-2.5 h-2.5" /> saved
               </motion.span>
             )}
           </AnimatePresence>
+
           {lintErrors.length > 0 && (
             <button
               onClick={() => setShowErrors(!showErrors)}
-              className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary border border-border hover:bg-secondary/80 transition-colors"
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-secondary hover:bg-secondary/80 transition-colors"
             >
-              {errorCount > 0 && <span className="text-destructive">{errorCount} ❌</span>}
-              {warningCount > 0 && <span className="text-warning">{warningCount} ⚠️</span>}
+              {errorCount > 0 && <span className="text-destructive">{errorCount}E</span>}
+              {warningCount > 0 && <span className="text-warning">{warningCount}W</span>}
               {showErrors ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
             </button>
           )}
+
+          <Button
+            size="sm"
+            onClick={handleUpload}
+            disabled={disabled || !code.trim() || !fileName.trim() || uploading}
+            className="h-6 text-[10px] px-2 gap-1"
+          >
+            {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+            رفع
+          </Button>
         </div>
       </div>
 
-      {/* File name + upload */}
-      <div className="flex gap-2">
-        <Input
-          placeholder="script.lua"
-          value={fileName}
-          onChange={(e) => setFileName(e.target.value)}
-          className="font-mono bg-muted border-border max-w-xs"
-        />
-        <Button onClick={handleUpload} disabled={disabled || !code.trim() || !fileName.trim() || uploading}>
-          {uploading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Upload className="w-4 h-4 mr-1" />}
-          رفع
-        </Button>
-      </div>
-
-      {/* Editor */}
-      <div className="border border-border rounded-lg overflow-hidden">
-        <div className="h-8 bg-secondary/80 flex items-center justify-between px-3 border-b border-border">
-          <span className="text-xs font-mono text-muted-foreground flex items-center gap-1.5">
-            <Terminal className="w-3 h-3 text-primary" />
-            {fileName}
-          </span>
-          <span className="text-[9px] font-mono text-muted-foreground/40">Lua + Roblox</span>
-        </div>
+      {/* Monaco Editor */}
+      <div className="flex-1 min-h-0">
         <Editor
-          height="400px"
+          height="100%"
           defaultLanguage="lua"
           value={code}
           onChange={handleEditorChange}
           onMount={handleEditorMount}
           options={{
             minimap: { enabled: false },
-            fontSize: 14,
+            fontSize: 13,
             fontFamily: "'JetBrains Mono', monospace",
             lineNumbers: "on",
             scrollBeyondLastLine: false,
@@ -247,33 +240,32 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
         />
       </div>
 
-      {/* Lint Errors Panel */}
+      {/* Lint errors panel */}
       <AnimatePresence>
         {showErrors && lintErrors.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
+            initial={{ height: 0 }}
+            animate={{ height: "auto" }}
+            exit={{ height: 0 }}
+            className="overflow-hidden border-t border-border shrink-0"
           >
-            <div className="p-3 rounded-lg bg-secondary/50 border border-border space-y-1 max-h-40 overflow-y-auto">
-              <p className="text-xs font-mono text-muted-foreground flex items-center gap-1 mb-2">
+            <div className="max-h-32 overflow-y-auto bg-card p-2 space-y-0.5">
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1 mb-1">
                 <AlertTriangle className="w-3 h-3 text-warning" />
-                تحليل الكود ({lintErrors.length} ملاحظة)
+                تحليل ({lintErrors.length})
               </p>
               {lintErrors.map((err, i) => (
                 <div
                   key={i}
-                  className={`text-[11px] font-mono px-2 py-1 rounded flex items-start gap-2 ${
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded ${
                     err.severity === "error"
                       ? "bg-destructive/10 text-destructive"
                       : err.severity === "warning"
                       ? "bg-warning/10 text-warning"
-                      : "bg-primary/5 text-muted-foreground"
+                      : "text-muted-foreground"
                   }`}
                 >
-                  <span className="shrink-0">سطر {err.line}:</span>
-                  <span>{err.message}</span>
+                  <span className="opacity-50">L{err.line}</span> {err.message}
                 </div>
               ))}
             </div>
@@ -281,49 +273,37 @@ const CodeEditor = ({ onUpload, disabled, initialCode, initialFileName }: CodeEd
         )}
       </AnimatePresence>
 
-      {/* Upload Result */}
+      {/* Upload result bar */}
       <AnimatePresence>
         {rawUrl && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="p-4 rounded-lg bg-secondary border border-primary/30 space-y-3"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden border-t border-primary/20 shrink-0"
           >
-            <p className="text-xs font-mono text-primary flex items-center gap-1">
-              <Link className="w-3 h-3" />
-              ✓ تم الرفع! رابط الملف:
-            </p>
-            <div className="flex gap-2 items-center">
-              <code className="text-xs font-mono text-accent bg-muted px-2 py-1 rounded flex-1 overflow-x-auto">
-                {rawUrl}
-              </code>
-              <Button variant="outline" size="sm" onClick={() => copyText(rawUrl, setCopied)}>
-                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+            <div className="p-2 bg-primary/5 flex items-center gap-2 text-xs">
+              <Link className="w-3 h-3 text-primary shrink-0" />
+              <code className="text-[10px] text-accent truncate flex-1">{rawUrl}</code>
+              <Button variant="ghost" size="sm" onClick={() => copyText(rawUrl, setCopied)} className="h-5 px-1.5 shrink-0">
+                {copied ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
               </Button>
-            </div>
-            <div className="pt-2 border-t border-border">
-              <p className="text-xs font-mono text-muted-foreground mb-1 flex items-center gap-1">
-                <Wand2 className="w-3 h-3 text-warning" />
-                كود التشغيل:
-              </p>
-              <div className="flex gap-2 items-center">
-                <code className="text-xs font-mono text-warning bg-muted px-2 py-1 rounded flex-1 overflow-x-auto">
-                  {`loadstring(game:HttpGet("${rawUrl}"))()`}
-                </code>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => copyText(`loadstring(game:HttpGet("${rawUrl}"))()`, setCopiedLoadstring)}
-                >
-                  {copiedLoadstring ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                </Button>
-              </div>
+              <div className="w-px h-4 bg-border" />
+              <Wand2 className="w-3 h-3 text-warning shrink-0" />
+              <code className="text-[10px] text-warning truncate">{`loadstring(game:HttpGet("${rawUrl}"))()`}</code>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => copyText(`loadstring(game:HttpGet("${rawUrl}"))()`, setCopiedLoadstring)}
+                className="h-5 px-1.5 shrink-0"
+              >
+                {copiedLoadstring ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
+              </Button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 };
 
