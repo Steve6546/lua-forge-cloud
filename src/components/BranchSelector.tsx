@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GitBranch, Loader2 } from "lucide-react";
 import * as github from "@/lib/github-api";
-import { toast } from "sonner";
+import { useEffect } from "react";
 
 interface BranchSelectorProps {
   token: string;
@@ -27,40 +27,28 @@ const BranchSelector = ({ token, owner, repo, selectedBranch, onSelectBranch }: 
           onSelectBranch(def);
         }
       })
-      .catch(() => {
-        toast.error("خطأ في تحميل الفروع");
-        setBranches([]);
-      })
+      .catch(() => setBranches([]))
       .finally(() => setLoading(false));
   }, [token, owner, repo]);
 
   if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Loader2 className="w-3 h-3 animate-spin" />
-        تحميل الفروع...
-      </div>
-    );
+    return <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />;
   }
 
   if (branches.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-2">
-      <GitBranch className="w-3.5 h-3.5 text-primary shrink-0" />
-      <Select value={selectedBranch} onValueChange={onSelectBranch}>
-        <SelectTrigger className="bg-muted border-border font-mono h-8 text-xs max-w-[180px]">
-          <SelectValue placeholder="اختر فرع..." />
-        </SelectTrigger>
-        <SelectContent className="bg-popover border-border">
-          {branches.map((b) => (
-            <SelectItem key={b} value={b} className="font-mono text-xs">
-              {b}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+    <Select value={selectedBranch} onValueChange={onSelectBranch}>
+      <SelectTrigger className="h-7 text-[10px] bg-muted border-border max-w-[120px] gap-1">
+        <GitBranch className="w-3 h-3 shrink-0" />
+        <SelectValue placeholder="branch" />
+      </SelectTrigger>
+      <SelectContent className="bg-popover border-border">
+        {branches.map((b) => (
+          <SelectItem key={b} value={b} className="text-xs font-mono">{b}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 };
 
