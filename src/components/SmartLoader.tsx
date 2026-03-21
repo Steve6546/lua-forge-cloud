@@ -15,42 +15,21 @@ const SmartLoader = ({ rawUrl }: SmartLoaderProps) => {
 
   if (!rawUrl) return null;
 
-  const loaders: Record<LoaderType, { label: string; icon: any; code: string; desc: string }> = {
+  const loaders: Record<LoaderType, { label: string; icon: any; code: string }> = {
     basic: {
       label: "أساسي",
       icon: Zap,
-      desc: "تشغيل مباشر",
       code: `loadstring(game:HttpGet("${rawUrl}"))()`,
     },
     protected: {
       label: "محمي",
       icon: Shield,
-      desc: "مع حماية من الأخطاء",
-      code: `local success, err = pcall(function()
-    loadstring(game:HttpGet("${rawUrl}"))()
-end)
-if not success then
-    warn("[Loader Error]: " .. tostring(err))
-end`,
+      code: `local ok, err = pcall(function()\n    loadstring(game:HttpGet("${rawUrl}"))()\nend)\nif not ok then warn("[Error]: " .. tostring(err)) end`,
     },
     "auto-update": {
-      label: "تحديث تلقائي",
+      label: "تحديث",
       icon: RefreshCw,
-      desc: "يتحقق من التحديثات",
-      code: `-- Auto Update Loader
-local VERSION_URL = "${rawUrl}"
-local function loadScript()
-    local success, err = pcall(function()
-        local code = game:HttpGet(VERSION_URL .. "?t=" .. tick())
-        loadstring(code)()
-    end)
-    if not success then
-        warn("[Auto-Loader]: " .. tostring(err))
-        task.wait(5)
-        loadScript()
-    end
-end
-loadScript()`,
+      code: `local function load()\n    local ok, err = pcall(function()\n        loadstring(game:HttpGet("${rawUrl}?t=" .. tick()))()\n    end)\n    if not ok then warn(err); task.wait(5); load() end\nend\nload()`,
     },
   };
 
@@ -60,21 +39,14 @@ loadScript()`,
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const active = loaders[activeType];
-
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-3"
-    >
-      <label className="text-sm font-mono text-muted-foreground flex items-center gap-2">
-        <Zap className="w-4 h-4 text-warning" />
-        نظام التحميل الذكي
-      </label>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Zap className="w-3.5 h-3.5 text-warning" />
+        <span>كود التحميل</span>
+      </div>
 
-      {/* Loader type tabs */}
-      <div className="flex gap-1 p-1 rounded-lg bg-muted border border-border">
+      <div className="flex gap-1">
         {(Object.keys(loaders) as LoaderType[]).map((type) => {
           const l = loaders[type];
           const Icon = l.icon;
@@ -82,45 +54,41 @@ loadScript()`,
             <button
               key={type}
               onClick={() => setActiveType(type)}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono transition-all ${
+              className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] transition-colors ${
                 activeType === type
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-muted-foreground hover:text-foreground"
               }`}
             >
-              <Icon className="w-3 h-3" />
+              <Icon className="w-2.5 h-2.5" />
               {l.label}
             </button>
           );
         })}
       </div>
 
-      {/* Active loader code */}
       <AnimatePresence mode="wait">
         <motion.div
           key={activeType}
-          initial={{ opacity: 0, y: 5 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -5 }}
-          className="space-y-2"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="relative"
         >
-          <p className="text-[10px] font-mono text-muted-foreground/60">{active.desc}</p>
-          <div className="relative">
-            <pre className="text-xs font-mono text-warning bg-muted p-3 rounded-lg overflow-x-auto border border-border">
-              {active.code}
-            </pre>
-            <Button
-              variant="outline"
-              size="sm"
-              className="absolute top-2 right-2 h-6 px-2"
-              onClick={() => copyCode(active.code, activeType)}
-            >
-              {copied === activeType ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-            </Button>
-          </div>
+          <pre className="text-[10px] font-mono text-warning bg-muted p-2 rounded overflow-x-auto border border-border">
+            {loaders[activeType].code}
+          </pre>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute top-1 right-1 h-5 w-5 p-0"
+            onClick={() => copyCode(loaders[activeType].code, activeType)}
+          >
+            {copied === activeType ? <Check className="w-2.5 h-2.5 text-primary" /> : <Copy className="w-2.5 h-2.5" />}
+          </Button>
         </motion.div>
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 };
 
